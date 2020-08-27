@@ -73,9 +73,13 @@ const plugin: KlarnaPlugin = {
             })
           }
 
+          let paidShippingOptions = order.shipping_options.filter(function (option) {
+            return option.price > 0
+          })
+
           if (
             hasOwnProperty(config.klarna, 'freeshipping_tag') &&
-            getters.isFreeShipping
+            paidShippingOptions.length === 0
           ) {
             tags.push(config.klarna.freeshipping_tag)
           }
