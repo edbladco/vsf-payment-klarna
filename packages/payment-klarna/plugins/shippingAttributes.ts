@@ -26,6 +26,71 @@ const plugin: KlarnaPlugin = {
         length: lengthOrder,
         width: widthOrder
       }
+
+      let shippingMethodTags = []
+      let shippingMethodBlacklist = []
+
+      if (hasOwnProperty(config.klarna, 'limitation_shipping_attributes')) {
+        config.klarna.limitation_shipping_attributes.map((shippingMethod) => {
+
+          shippingMethodTags.push(shippingMethod.code)
+
+          const maxWeight = shippingMethod.weight
+          const maxHeight = shippingMethod.height
+          const maxWidth = shippingMethod.width
+          const maxLength = shippingMethod.length
+
+          order.order_lines.forEach(klarnaProduct => {
+            if (klarnaProduct.reference) {
+              const product = getters.getTrueCartItems.find(product => product.product.sku === klarnaProduct.reference)
+              const weight = getValue('weight', product)
+              const height = getValue('height', product) * 10
+              const width = getValue('width', product) * 10
+              const length = getValue('length', product) * 10
+
+              let checkWeightOnly = false
+
+              if (hasOwnProperty(shippingMethod, 'check_products_weight_only')) {
+                Object.keys(shippingMethod.check_products_weight_only)
+                  .forEach((key) => {
+                    if (hasOwnProperty(product, 'product') && shippingMethod.check_products_weight_only[key].includes(product.product[key])) {
+                      checkWeightOnly = true
+                    }
+                  })
+              }
+
+              if (checkWeightOnly) {
+                if ((parseFloat(sumDimensionOrder.weight) > maxWeight)) {
+                  shippingMethodBlacklist.push(shippingMethod.code)
+                }
+              } else {
+                if (
+                  parseFloat(sumDimensionOrder.weight) > maxWeight ||
+                  sumDimensionOrder.height > maxHeight ||
+                  sumDimensionOrder.width > maxWidth ||
+                  sumDimensionOrder.length > maxLength
+                ) {
+                  shippingMethodBlacklist.push(shippingMethod.code)
+                }
+              }
+            }
+          })
+        })
+      }
+
+      shippingMethodTags = shippingMethodTags.filter(value => !shippingMethodBlacklist.includes(value))
+
+      let paidShippingOptions = order.shipping_options.filter(function (option) {
+        return option.price > 0
+      })
+
+      if (
+        hasOwnProperty(config.klarna, 'freeshipping_tag') &&
+        paidShippingOptions.length === 0
+      ) {
+        shippingMethodTags.push(config.klarna.freeshipping_tag)
+      }
+
       order.order_lines.forEach(klarnaProduct => {
         if (klarnaProduct.reference) {
           const product = getters.getTrueCartItems.find(product => product.product.sku === klarnaProduct.reference)
@@ -34,55 +99,8 @@ const plugin: KlarnaPlugin = {
           const width = getValue('width', product) * 10
           const length = getValue('length', product) * 10
 
-          const tags = []
-
-          if (hasOwnProperty(config.klarna, 'limitation_shipping_attributes')) {
-            config.klarna.limitation_shipping_attributes.forEach((shippingMethod) => {
-              const maxWeight = shippingMethod.weight
-              const maxHeight = shippingMethod.height
-              const maxWidth = shippingMethod.width
-              const maxLength = shippingMethod.length
-
-              let checkWeightOnly = false
-
-              if (hasOwnProperty(shippingMethod, 'check_products_weight_only')) {
-                Object.keys(shippingMethod.check_products_weight_only)
-                  .forEach((key) => {
-                  // Check if product only need to check weight only
-                    if (hasOwnProperty(product, 'product') && shippingMethod.check_products_weight_only[key].includes(product.product[key])) {
-                      checkWeightOnly = true
-                    }
-                  })
-              }
-
-              // Currently, Klarna only supports weight for order_lines, this should be updated after Klarna added "order_weight"
-              if (checkWeightOnly) {
-                if ((parseFloat(sumDimensionOrder.weight) <= maxWeight)) {
-                  tags.push(shippingMethod.code)
-                }
-              } else {
-                if (
-                  parseFloat(sumDimensionOrder.weight) <= maxWeight &&
-                  sumDimensionOrder.height <= maxHeight &&
-                  sumDimensionOrder.width <= maxWidth &&
-                  sumDimensionOrder.length <= maxLength
-                ) {
-                  tags.push(shippingMethod.code)
-                }
-              }
-            })
-          }
-
-          let paidShippingOptions = order.shipping_options.filter(function (option) {
-            return option.price > 0
-          })
-
-          if (
-            hasOwnProperty(config.klarna, 'freeshipping_tag') &&
-            paidShippingOptions.length === 0
-          ) {
-            tags.push(config.klarna.freeshipping_tag)
-          }
+          let tags = []
+          tags = tags.concat(shippingMethodTags)
 
           klarnaProduct.shipping_attributes = {
             weight: weight,
